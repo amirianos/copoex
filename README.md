@@ -40,16 +40,16 @@ You can add as many commands as needed.
 
 1. After building or downloading the binary, run the exporter by specifying your configuration file:
 
-    ./copoex
+    ./copoex -commands CONFIG_PATH -port ":PORT_NUMBER"
 
-   NOTE that you must place the `commands.yaml` file next to the `copoex` binary file.
+   Note that the default port number is `8099`, and the default `commands.yaml` file path is located next to the copoex binary file. If you want to change these default values, you can run it with the `-commands` and `-port` switches.
 
 2. By default, the exporter will be available at http://INSTANCE_IP:8099/metrics for Prometheus to scrape.
 
 ## Command-Line Options
 
-    -config: Path to the YAML configuration file (default: config.yaml).
-    -port: Port for exposing the Prometheus metrics (default: 8080).
+    -commands: Path to the YAML commands file (default: commands.yaml).
+    -port: Port for exposing the Prometheus metrics (default: 8099).
 
 ## Prometheus Integration
 
@@ -62,10 +62,10 @@ Add the following configuration to your Prometheus scrape_configs to scrape metr
           - targets: ['localhost:8099']
 
 Replace localhost:8099 with the actual address and port where copoex is running.
-Example Metrics
+
+## Example Metrics
 
 The commands defined in the configuration file will be executed periodically, and their output will be exposed as metrics. For example:
-
 
      HELP copoex_command_duration_seconds Duration of command execution in seconds.
      TYPE copoex_command_duration_seconds gauge

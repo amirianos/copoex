@@ -19,7 +19,7 @@ import (
 
 const (
         defaultMetricsPort = ":8099"
-        defaultConfigPath  = "commands.yaml"
+        defaultCommandsPath  = "commands.yaml"
         updateInterval     = 10 * time.Second
 )
 
@@ -44,13 +44,13 @@ func init() {
 
 func main() {
         // Define command-line flags
-        configPath := flag.String("config", defaultConfigPath, "Path to the commands YAML file")
+        commandsPath := flag.String("commands", defaultCommandsPath, "Path to the commands YAML file")
         metricsPort := flag.String("port", defaultMetricsPort, "Port to listen for metrics")
 
         // Parse command-line flags
         flag.Parse()
 
-        commands, err := loadCommands(*configPath)
+        commands, err := loadCommands(*commandsPath)
         if err != nil {
                 log.Fatalf("Failed to load commands: %v", err)
         }
