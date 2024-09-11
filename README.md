@@ -19,7 +19,7 @@
 2. Build the project:
    
 
-     go build -o copoex
+     CGO_ENABLED=0 GOOS=linux go build -o copoex
     
  Alternatively, you can use the pre-built binary (You can download compiled binary files from Release page).
 
