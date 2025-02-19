@@ -2,118 +2,105 @@ package main
 
 import (
         "bytes"
-        "flag"
         "fmt"
+        "io/ioutil"
         "log"
+        "net/http"
         "os/exec"
         "strconv"
         "strings"
-        "net/http"
         "time"
-        "io/ioutil"
 
         "github.com/prometheus/client_golang/prometheus"
         "github.com/prometheus/client_golang/prometheus/promhttp"
+        "gopkg.in/ini.v1"
         "gopkg.in/yaml.v2"
 )
 
-const (
-        defaultMetricsPort = ":8099"
-        defaultCommandsPath  = "commands.yaml"
-        updateInterval     = 10 * time.Second
+var (
+        // Define a Prometheus gauge metric
+        commandOutputGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+                Name: "command_executer_output",
+                Help: "Output of the executed command",
+        }, []string{"command", "status"})
 )
 
-// Command defines the structure of each command from the YAML file
 type Command struct {
         Name    string `yaml:"name"`
         Command string `yaml:"command"`
 }
 
-var (
-        // Define a Prometheus gauge metric
-        commandGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-                Name: "command_output",
-                Help: "Output of executed commands",
-        }, []string{"command_name"})
-)
-
 func init() {
         // Register the gauge metric with Prometheus's default registry
-        prometheus.MustRegister(commandGauge)
+        prometheus.MustRegister(commandOutputGauge)
 }
 
 func main() {
-        // Define command-line flags
-        commandsPath := flag.String("commands", defaultCommandsPath, "Path to the commands YAML file")
-        metricsPort := flag.String("port", defaultMetricsPort, "Port to listen for metrics")
-
-        // Parse command-line flags
-        flag.Parse()
-
-        commands, err := loadCommands(*commandsPath)
+        // Load the INI configuration file
+        cfg, err := ini.Load("config.ini")
         if err != nil {
-                log.Fatalf("Failed to load commands: %v", err)
+                log.Fatalf("Failed to read config file: %v", err)
         }
 
-        // Set up HTTP server for metrics
-        http.Handle("/metrics", promhttp.Handler())
-
-        // Start a goroutine to periodically update the metrics
-        go startMetricsUpdater(commands, commandGauge)
-
-        // Start the HTTP server
-        log.Printf("Starting HTTP server on %s", *metricsPort)
-        if err := http.ListenAndServe(*metricsPort, nil); err != nil {
-                log.Fatalf("Failed to start HTTP server: %v", err)
+        // Read the port number from the INI file
+        port := cfg.Section("server").Key("port").String()
+        if port == "" {
+                log.Fatal("Port number not found in config file")
         }
-}
 
-// loadCommands reads and parses the YAML file into a slice of Command structs
-func loadCommands(filePath string) ([]Command, error) {
-        data, err := ioutil.ReadFile(filePath)
+        // Read the YAML file
+        data, err := ioutil.ReadFile("commands.yaml")
         if err != nil {
-                return nil, fmt.Errorf("error reading YAML file: %w", err)
+                log.Fatalf("Error reading YAML file: %v", err)
         }
 
+        // Parse the YAML file into a slice of Command structs
         var commands []Command
         if err := yaml.Unmarshal(data, &commands); err != nil {
-                return nil, fmt.Errorf("error unmarshaling YAML data: %w", err)
+                log.Fatalf("Error unmarshaling YAML data: %v", err)
         }
 
-        return commands, nil
-}
+        // Set up a HTTP server to expose the metrics
+        http.Handle("/metrics", promhttp.Handler())
 
-// startMetricsUpdater periodically runs the commands and updates the Prometheus metrics
-func startMetricsUpdater(commands []Command, gauge *prometheus.GaugeVec) {
-        ticker := time.NewTicker(updateInterval)
-        defer ticker.Stop()
-
-        for {
-                for _, cmd := range commands {
-                        output := runCommand(cmd.Command)
-                        gauge.WithLabelValues(cmd.Name).Set(output)
+        // Start a goroutine to periodically update the metric
+        go func() {
+                for {
+                        for _, cmd := range commands {
+                                output, err := executeCommand(cmd.Command)
+                                if err != nil {
+                                        log.Printf("Error executing command %s: %v", cmd.Name, err)
+                                        commandOutputGauge.WithLabelValues(cmd.Name, "error").Set(0)
+                                } else {
+                                        commandOutputGauge.WithLabelValues(cmd.Name, "success").Set(output)
+                                }
+                        }
+                        // Update the metric every 10 seconds
+                        time.Sleep(10 * time.Second)
                 }
-                <-ticker.C // Wait for the next tick
-        }
+        }()
+
+        // Start the HTTP server
+        log.Printf("HTTP server listening on port %s", port)
+        log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
-// runCommand executes a shell command and returns the output as a float64
-func runCommand(command string) float64 {
+func executeCommand(command string) (float64, error) {
         cmd := exec.Command("sh", "-c", command)
         var out bytes.Buffer
         cmd.Stdout = &out
 
         if err := cmd.Run(); err != nil {
-                log.Printf("Error running command '%s': %v", command, err)
-                return 0
+                return 0, fmt.Errorf("error running command: %v", err)
         }
 
-        outputStr := strings.TrimSpace(out.String())
-        output, err := strconv.ParseFloat(outputStr, 64)
+        // Convert the output to a float64
+        countStr := strings.TrimSpace(out.String())
+        count, err := strconv.ParseFloat(countStr, 64)
         if err != nil {
-                log.Printf("Error converting output '%s' to float: %v", outputStr, err)
-                return 0
+                return 0, fmt.Errorf("error converting output to float64: %v", err)
         }
 
-        return output
+        return count, nil
 }
+
